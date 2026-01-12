@@ -1,37 +1,55 @@
 # 🌦️ End-to-End Weather ETL Pipeline (Home Lab)
 
-A robust, containerized ETL pipeline running on TrueNAS Scale that extracts meteorological data, transforms it for analytics, and loads it into PostgreSQL.
+A robust, containerized ETL pipeline running on **TrueNAS Scale**. It extracts real-time meteorological data, transforms it for analytics, and loads it into a PostgreSQL data warehouse for visualization.
 
-![Dashboard](images/dashboard.png)
+![Dashboard Preview](images/dashboard.png)
+*(A view of the Metabase dashboard tracking temperature, pressure trends, and precipitation)*
 
-## 🎯 Project Goal
-To engineer a reliable, idempotent data pipeline that overcomes the networking limitations of **Docker Macvlan** on Linux hosts, enabling a full "Extract-Load-Visualize" lifecycle for local weather metrics.
+## 🎯 Engineering Goal
+To engineer a fault-tolerant data pipeline that overcomes the networking isolation limitations of **Docker Macvlan** on Linux hosts, enabling a full "Extract-Load-Visualize" lifecycle for local weather metrics.
 
 ## 🏗️ Architecture & Tech Stack
 
 | Component | Technology | Role |
 | :--- | :--- | :--- |
-| **Extract** | Python (Requests) | Fetches data from Open-Meteo API. |
-| **Transform** | Pandas | Cleans timestamps, detects anomalies, standardizes schema. |
-| **Load** | PostgreSQL 15 | Persistent storage with rich metrics (Wind, Pressure, Rain). |
+| **Extract** | Python (Requests) | Fetches real-time data from Open-Meteo API. |
+| **Transform** | Pandas | Normalizes timestamps, cleans data, and calculates rich metrics (Apparent Temp, Pressure). |
+| **Load** | PostgreSQL 15 | Persistent storage with time-series data and idempotent insertion logic. |
 | **Infrastructure** | Docker Compose | Multi-container orchestration. |
-| **Networking** | Macvlan & Shim | **Custom Host Bridge** for bidirectional communication. |
-| **Visualization** | Metabase | Business Intelligence dashboarding. |
+| **Networking** | Macvlan & Shim | **Custom Host Bridge** for bidirectional communication on TrueNAS. |
+| **Visualization** | Metabase | Business Intelligence dashboarding and trend analysis. |
 
-## ⚙️ Key Engineering Features
+## ⚙️ Key Engineering Challenges
 
 ### 1. Network Bridging (The "Shim")
-**Challenge:** Docker Macvlan networks provide dedicated LAN IPs to containers but isolate them from the parent host (TrueNAS) by design.
-**Solution:** Implemented a custom Shell script (`shim_setup.sh`) to create a virtual bridge interface (`shim0`) on the host, manually routing traffic to the container IPs (`192.168.1.140/141`).
+**The Problem:** I utilized the Docker `macvlan` driver to give my containers dedicated physical LAN IPs (`192.168.1.x`). However, by kernel design, Macvlan interfaces are isolated from the parent host, preventing the TrueNAS host (and the ETL worker) from accessing the database via its storage IP.
 
-### 2. Idempotency & Fault Tolerance
-The pipeline is designed to crash-proof the data:
-* **Duplicate Handling:** Uses `SQLAlchemy` integrity error catching to gracefully skip existing records without failing the job.
-* **Self-Healing Schema:** The `init_db` module automatically detects if the database is fresh and creates the schema (including 10+ metric columns) on startup.
-* **Healthchecks:** Docker monitors the Python process state and restarts the container if the scheduler hangs.
+**The Solution:** Engineered a custom Shell script (`scripts/shim_setup.sh`) that:
+1. Creates a virtual bridge interface (`shim0`) on the host.
+2. Manually routes traffic destined for the container IPs through this bridge.
+3. Establishes full bidirectional connectivity between the Host and the Macvlan containers.
+
+### 2. Idempotency & Data Integrity
+The pipeline is designed to be "crash-proof." It can be restarted multiple times without corrupting the dataset:
+* **Duplicate Handling:** The ETL script catches `SQLAlchemy.exc.IntegrityError` (UniqueConstraint violations). If a record for a specific timestamp already exists, it is gracefully skipped.
+* **Self-Healing Schema:** The `init_db` module checks for the table's existence on startup. If missing, it automatically generates the schema with all 10+ metric columns.
+* **Smart Retries:** Implements connection backoff logic to wait for the database container to become ready before attempting execution.
 
 ## 🚀 Deployment
 
-**1. Clone the Repo**
+### 1. Prerequisites
+* Docker & Docker Compose
+* A Linux host (Debian/TrueNAS Scale recommended)
+* Network interface availability (e.g., `br0` or `eth0`)
+
+### 2. Installation
+Clone the repository:
 ```bash
-git clone [https://github.com/YOUR_USERNAME/weather-pipeline-homelab.git](https://github.com/YOUR_USERNAME/weather-pipeline-homelab.git)
+git clone [https://github.com/devetzik/weather-pipeline-homelab.git](https://github.com/devetzik/weather-pipeline-homelab.git)
+cd weather-pipeline-homelab
+
+### 3. Configuration
+Create the environment file from the template:
+```bash
+cp env.example .env
+
