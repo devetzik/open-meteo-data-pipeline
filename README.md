@@ -7,6 +7,7 @@ This project is built to run continuously as a background data job, pulling rich
 The database was tested, connected to pgAdmin4 for queries and administration and connected to Metabase for visualizing the data.
 
 ## Project Structure
+```
 open-meteo-data-pipeline/
 ├── app/
 │   ├── Dockerfile           # Uses python:3.9-slim 
@@ -19,6 +20,7 @@ open-meteo-data-pipeline/
 │   └── dashboard.png        # Example visualization of the data
 ├── postgres_data/           # Local volume bind for DB persistence
 └── README.md
+```
 
 ## How it works
 1. Database Initialization: On startup, the script connects to PostgreSQL and ensures the weather_data table exists.
